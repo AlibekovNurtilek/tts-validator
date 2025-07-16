@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+soundfile
+numpy
+
+# 👉 Добавлено для авторизации
+sqlalchemy
+passlib[bcrypt]
+python-jose[cryptography]
