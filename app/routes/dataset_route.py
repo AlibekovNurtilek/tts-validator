@@ -1,224 +1,73 @@
-from math import ceil
-from fastapi import APIRouter, HTTPException, Query, Body, Depends
-import os
-import json
-import wave
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+from datetime import datetime
 
-from app.auth.utils import decode_access_token
-from fastapi.security import OAuth2PasswordBearer
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    payload = decode_access_token(token)
-    if payload is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return payload
-
-router = APIRouter(prefix="/datasets", tags=["dataset"])
-
-DATASETS_FILE = os.path.join(os.path.dirname(__file__), "../../datasets.json")
-
-def format_duration(seconds: float) -> str:
-    total_seconds = int(seconds)
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    secs = total_seconds % 60
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
-
-
-@router.get("/info")
-def get_datasets_info(user=Depends(get_current_user)):
-    if not os.path.exists(DATASETS_FILE):
-        return []
-
-    with open(DATASETS_FILE, "r", encoding="utf-8") as f:
-        datasets = json.load(f)
-
-    result = []
-    for ds in datasets:
-        txt_path = os.path.join(os.path.dirname(DATASETS_FILE), ds["txt_path"])
-        sample_count = 0
-
-        if os.path.exists(txt_path):
-            with open(txt_path, "r", encoding="utf-8") as txt_file:
-                sample_count = sum(1 for _ in txt_file)
-
-        total_seconds = ds.get("total_duration_seconds", 0)
-        total_duration = format_duration(total_seconds)
-
-        result.append({
-            "id": ds["id"],
-            "name": ds["name"],
-            "sample_count": sample_count,
-            "total_duration": total_duration
-        })
-
-    return result
+from app.db import SessionLocal
+from pydantic import BaseModel
+from app.models.audio_dataset import AudioDataset
+from app.services import dataset_service
+from app.services.dataset_service import initialize_dataset_service  # <-- наш сервис
+from app.schemas.dataset import (
+    DatasetCreate,
+    DatasetUpdate,
+    DatasetOut,
+    DatasetInitRequest
+)
 
 
 
+router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 
-@router.get("/{dataset_id}/records")
-def get_records(
-    dataset_id: int,
-    page: int = 1,
-    limit: int = 10,
-    q: str = Query("", alias="q"),
-    user=Depends(get_current_user)  # 👈 добавляем зависимость авторизации
-):
-    if not os.path.exists(DATASETS_FILE):
-        raise HTTPException(status_code=500, detail="datasets.json not found")
-
-    with open(DATASETS_FILE, "r", encoding="utf-8") as f:
-        datasets = json.load(f)
-
-    dataset = next((ds for ds in datasets if ds["id"] == dataset_id), None)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    txt_path = os.path.join(os.path.dirname(DATASETS_FILE), dataset["txt_path"])
-    wav_path = dataset["wav_path"].strip("/")
-
-    if not os.path.exists(txt_path):
-        raise HTTPException(status_code=404, detail=f"TXT file: {txt_path} not found")
-
-    with open(txt_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    if q.strip():
-        filtered = [line for line in lines if q.lower() in line.split("|")[1].lower()]
-    else:
-        filtered = lines
-
-    total = len(filtered)
-    total_pages = ceil(total / limit)
-    start = (page - 1) * limit
-    end = start + limit
-
-    if start >= total:
-        return {"page": page, "total": total, "total_pages": total_pages, "records": []}
-
-    selected_lines = filtered[start:end]
-    records = []
-
-    for line in selected_lines:
-        parts = line.strip().split("|")
-        if len(parts) != 2:
-            continue
-        file_name, text = parts
-
-        # Формируем путь как uzak_jol_wavs/uzak_jol_10_b_001.wav
-        audio_path = f"{wav_path}/{file_name}.wav"
-
-        records.append({
-            "index": file_name,
-            "text": text,
-            "audio_url": audio_path  # меняем название на audio_path
-        })
-
-    return {
-        "page": page,
-        "total": total,
-        "total_pages": total_pages,
-        "records": records
-    }
-
-
-@router.put("/{dataset_id}/records/{filename}")
-def update_record_text(dataset_id: int, filename: str, new_text: str = Body(..., embed=True), user=Depends(get_current_user)):
-    if not os.path.exists(DATASETS_FILE):
-        raise HTTPException(status_code=500, detail="datasets.json not found")
-
-    with open(DATASETS_FILE, "r", encoding="utf-8") as f:
-        datasets = json.load(f)
-
-    dataset = next((ds for ds in datasets if ds["id"] == dataset_id), None)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    txt_path = os.path.join(os.path.dirname(DATASETS_FILE), dataset["txt_path"])
-
-    if not os.path.exists(txt_path):
-        raise HTTPException(status_code=404, detail="TXT file not found")
-
-    with open(txt_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    updated = False
-    for i, line in enumerate(lines):
-        parts = line.strip().split("|")
-        if len(parts) != 2:
-            continue
-        file_name = parts[0]
-        if file_name == filename:
-            lines[i] = f"{file_name}|{new_text.strip()}\n"
-            updated = True
-            break
-
-    if not updated:
-        raise HTTPException(status_code=404, detail="Filename not found")
-
-    with open(txt_path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-
-    return {"message": "Record updated successfully"}
-
-def get_wav_duration_seconds(file_path: str) -> float:
+def get_db():
+    db = SessionLocal()
     try:
-        with wave.open(file_path, 'rb') as wav_file:
-            frames = wav_file.getnframes()
-            rate = wav_file.getframerate()
-            return frames / float(rate)
+        yield db
+    finally:
+        db.close()
+
+
+
+# ---------------------
+# 📍 Роуты
+# ---------------------
+
+@router.get("/", response_model=List[DatasetOut])
+def get_all_datasets(db: Session = Depends(get_db)):
+    return dataset_service.get_all_datasets(db)
+
+
+@router.get("/{dataset_id}", response_model=DatasetOut)
+def get_dataset_by_id(dataset_id: int, db: Session = Depends(get_db)):
+    return dataset_service.get_dataset_by_id(dataset_id, db)
+
+
+@router.get("/by-speaker/{speaker_id}", response_model=List[DatasetOut])
+def get_datasets_by_speaker_id(speaker_id: int, db: Session = Depends(get_db)):
+    return dataset_service.get_datasets_by_speaker_id(speaker_id, db)
+
+# ✅ Реальная инициализация
+@router.post("/initialize")
+def initialize_dataset(data: DatasetInitRequest, db: Session = Depends(get_db)):
+    try:
+        result = initialize_dataset_service(data, db)
+        return result
     except Exception as e:
-        print(f"Error reading WAV file: {file_path} - {e}")
-        return 0.0
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/dataset/{dataset_id}/records/{filename}")
-def delete_record(dataset_id: int, filename: str, user=Depends(get_current_user)):
-    if not os.path.exists(DATASETS_FILE):
-        raise HTTPException(status_code=500, detail="datasets.json not found")
 
-    with open(DATASETS_FILE, "r", encoding="utf-8") as f:
-        datasets = json.load(f)
+@router.post("/", response_model=DatasetOut, status_code=status.HTTP_201_CREATED)
+def create_dataset(dataset: DatasetCreate, db: Session = Depends(get_db)):
+    return dataset_service.create_dataset(dataset, db)
 
-    dataset = next((ds for ds in datasets if ds["id"] == dataset_id), None)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
 
-    txt_path = os.path.join(os.path.dirname(DATASETS_FILE), dataset["txt_path"])
-    wav_dir = os.path.join(os.path.dirname(DATASETS_FILE), "../" + dataset["wav_path"])
+@router.put("/{dataset_id}", response_model=DatasetOut)
+def update_dataset(dataset_id: int, dataset: DatasetUpdate, db: Session = Depends(get_db)):
+    return dataset_service.update_dataset(dataset_id, dataset, db)
 
-    if not os.path.exists(txt_path):
-        raise HTTPException(status_code=404, detail="TXT file not found")
 
-    with open(txt_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    line_index = next((i for i, line in enumerate(lines) if line.split("|")[0] == filename), None)
-    if line_index is None:
-        raise HTTPException(status_code=404, detail="Filename not found")
-
-    wav_path = os.path.join(wav_dir, f"{filename}.wav")
-    duration_to_subtract = get_wav_duration_seconds(wav_path)
-
-    del lines[line_index]
-
-    with open(txt_path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-
-    for ds in datasets:
-        if ds["id"] == dataset_id:
-            old_total = ds.get("total_duration_seconds", 0)
-            ds["total_duration_seconds"] = max(0, old_total - duration_to_subtract)
-            break
-
-    with open(DATASETS_FILE, "w", encoding="utf-8") as f:
-        json.dump(datasets, f, ensure_ascii=False, indent=2)
-
-    return {
-        "message": "Record deleted successfully",
-        "removed_duration_seconds": duration_to_subtract,
-        "new_total_duration_seconds": ds["total_duration_seconds"]
-    }
+@router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
+    dataset_service.delete_dataset(dataset_id, db)
+    return

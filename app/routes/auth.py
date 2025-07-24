@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db import SessionLocal
-from app.auth import models, schemas, utils
-from datetime import timedelta
+from app.auth import schemas
+from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -14,34 +14,25 @@ def get_db():
     finally:
         db.close()
 
-
 @router.post("/register", response_model=schemas.UserOut)
 def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    existing_user = db.query(models.User).filter(models.User.username == user.username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username already taken")
-
-    hashed_pw = utils.hash_password(user.password)
-    new_user = models.User(
-        username=user.username,
-        hashed_password=hashed_pw,
-        role='administrator'
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+    return auth_service.register_user(user, db)
 
 
-@router.post("/login", response_model=schemas.Token)
+@router.post("/login")
 def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == credentials.username).first()
-    if not user or not utils.verify_password(credentials.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return auth_service.login_user(credentials, db)
 
-    token = utils.create_access_token(
-        data={"sub": user.username, "role": user.role},
-        expires_delta=timedelta(minutes=60)
-    )
 
-    return {"access_token": token, "token_type": "bearer"}
+@router.get("/me")
+def get_me(request: Request):
+    # пока заглушка, можно заменить позже на полноценный decode
+    return {
+        "sub": "admin",
+        "role": "admin"
+    }
+
+
+@router.post("/logout")
+def logout():
+    return auth_service.logout_user()
