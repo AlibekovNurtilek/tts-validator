@@ -1,13 +1,10 @@
-import os
-import logging
-from typing import List, Tuple
-
 import librosa
 import numpy as np
 import soundfile as sf
+import os
+from typing import Tuple, List
 from scipy import ndimage
-from tqdm import tqdm
-
+import logging
 
 def segment_audio(audio_path: str, output_dir: str, min_length: float, max_length: float) -> dict:
     """
@@ -22,6 +19,7 @@ def segment_audio(audio_path: str, output_dir: str, min_length: float, max_lengt
     Returns:
         dict: Статус выполнения и статистика
     """
+    
     try:
         # Создаем выходную директорию
         os.makedirs(output_dir, exist_ok=True)
@@ -267,17 +265,19 @@ def _optimize_segments(segments: List[Tuple[int, int]], sr: int,
 
 def _save_segments(segments: List[Tuple[int, int]], audio: np.ndarray, sr: int,
                   output_dir: str, original_path: str) -> int:
-    """Сохраняет сегменты в файлы с прогресс-баром."""
+    """Сохраняет сегменты в файлы."""
     
     base_name = os.path.splitext(os.path.basename(original_path))[0]
     saved_count = 0
-
-    for i, (start, end) in enumerate(tqdm(segments, desc="Сохранение сегментов", ncols=80)):
+    
+    for i, (start, end) in enumerate(segments):
         segment_audio = audio[start:end]
         
+        # Проверяем качество сегмента
         if len(segment_audio) > 0 and not np.all(segment_audio == 0):
             filename = f"{base_name}_segment_{i+1:04d}.wav"
             filepath = os.path.join(output_dir, filename)
+            
             try:
                 sf.write(filepath, segment_audio, sr)
                 saved_count += 1
@@ -307,5 +307,4 @@ def _calculate_stats(segments: List[Tuple[int, int]], min_length: float,
         "min_duration": min(durations) if durations else 0,
         "max_duration": max(durations) if durations else 0
     }
-
 

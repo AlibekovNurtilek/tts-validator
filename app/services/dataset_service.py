@@ -13,7 +13,7 @@ from pydub.utils import mediainfo
 import wave
 from slugify import slugify 
 from app.services.segmentation_service import segment_audio
-from app.config import DATASET_URL
+from app.config import BASE_DATA_DIR
 
 
 
@@ -63,31 +63,30 @@ def initialize_dataset_service(data: DatasetInitRequest, db: Session):
     speaker = get_or_create_speaker_by_name(db, data.speaker_name)
     speaker_id = speaker.id
 
-    # 2. Генерируем уникальное имя на основе спикера и времени
+    # 1. Уникальное имя датасета
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
     speaker_slug = slugify(speaker.speaker_name)
     base_name = f"{speaker_slug}_{timestamp}"
-    #base_name = speaker_slug
 
-    # 3. Пути
-    datasets_root = Path(DATASET_URL)
-    audio_path = datasets_root / f"{base_name}.wav"
-    samples_dir = datasets_root / f"{base_name}_wavs"
-    os.makedirs(samples_dir, exist_ok=True)
+    # 2. Относительные пути (для БД)
+    datasets_root = Path("datasets")
+    source_rel_path = datasets_root / f"{base_name}.wav"
+    segments_rel_dir = datasets_root / f"{base_name}_wavs"
 
-    # 4. Скачиваем аудио
+    # 3. Абсолютные пути (для операций с файлами)
+    source_abs_path = Path(BASE_DATA_DIR) / source_rel_path
+    segments_abs_dir = os.path.join(BASE_DATA_DIR, segments_rel_dir)
+    os.makedirs(segments_abs_dir, exist_ok=True)
+
+    # 4. Скачиваем исходное аудио
     try:
-        download_audio_from_youtube(data.url, str(audio_path.with_suffix('')))
+        download_audio_from_youtube(data.url, str(source_abs_path.with_suffix('')))
     except Exception as e:
         raise RuntimeError(f"Ошибка при скачивании аудио: {e}")
 
-    # 5. Обновляем путь (yt_dlp сам добавляет .wav)
-    final_audio_path = audio_path
-
-    # 6. Заглушка на семплирование
+    # 5. Семплируем
     print("[stub] Запуск семплирования аудио...")
-
-    result = segment_audio(str(final_audio_path), str(samples_dir), 3, 15)
+    result = segment_audio(str(source_abs_path), str(segments_abs_dir), data.min_length, data.max_length)
 
     if result['status'] != 'success':
         raise RuntimeError(f"Сегментация не удалась: {result['message']}")
@@ -95,15 +94,15 @@ def initialize_dataset_service(data: DatasetInitRequest, db: Session):
     print(f"Создано сегментов: {result['segments_count']}")
     print(f"Статистика: {result['stats']}")
 
-    # 7. Создаем AudioDataset только после успешной сегментации
+    # 6. Сохраняем в БД только относительные пути
     new_dataset = AudioDataset(
         name=base_name,
         speaker_id=speaker_id,
         url=data.url,
-        full_audio_path=str(final_audio_path.resolve()),
-        samples_dir=str(samples_dir.resolve()),
+        source_rel_path=str(source_rel_path),
+        segments_rel_dir=str(segments_rel_dir),
         count_of_samples=result['segments_count'],
-        duration=get_audio_duration(str(final_audio_path)),
+        duration=get_audio_duration(str(source_abs_path)),
         created_at=datetime.utcnow(),
         last_update=datetime.utcnow()
     )
@@ -113,10 +112,9 @@ def initialize_dataset_service(data: DatasetInitRequest, db: Session):
 
     return {
         "message": "Инициализация завершена",
-        "dataset_id": new_dataset.id,
-        "audio_path": str(final_audio_path.resolve()),
-        "samples_dir": str(samples_dir.resolve())
+        "dataset_id": new_dataset.id
     }
+
 
 def download_audio_from_youtube(url: str, output_path: str) -> str:
     """

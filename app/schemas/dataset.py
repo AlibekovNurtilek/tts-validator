@@ -5,8 +5,8 @@ class DatasetBase(BaseModel):
     name: str
     speaker_id: int
     url: str
-    full_audio_path: str
-    samples_dir: str
+    source_rel_path: str
+    segments_rel_dir: str
     count_of_samples: int
     duration: float
 
@@ -26,5 +26,7 @@ class DatasetOut(DatasetBase):
 
 class DatasetInitRequest(BaseModel):
     url: str
+    min_length: int | None = None
+    max_length: int | None = None
     speaker_id: int | None = None
     speaker_name: str | None = None

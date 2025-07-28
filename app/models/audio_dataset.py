@@ -12,8 +12,8 @@ class AudioDataset(Base):
     url = Column(String, nullable=False)
 
     # Новый путь к полному .wav файлу
-    full_audio_path = Column(String, nullable=True)  # 🔹 Например: datasets/yt_.../full.wav
-    samples_dir = Column(String, nullable=False)     # 🔹 Например: datasets/yt_.../samples/
+    source_rel_path = Column(String, nullable=True)  # 🔹 Например: datasets/yt_.../full.wav
+    segments_rel_dir = Column(String, nullable=False)     # 🔹 Например: datasets/yt_.../samples/
     
     count_of_samples = Column(Integer, default=0)
     duration = Column(Float, nullable=True)  # в секундах
