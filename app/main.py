@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import Base, engine
 from app.auth import models  # обязательно, чтобы модель подгрузилась
-from app.models import speaker, audio_dataset, samples
+from app.models import datasets, samples, speakers
 
 # создаёт таблицы, если их нет
 Base.metadata.create_all(bind=engine)

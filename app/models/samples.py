@@ -7,7 +7,7 @@ class SampleText(Base):
     __tablename__ = "samples"
 
     id = Column(Integer, primary_key=True, index=True)
-    dataset_id = Column(Integer, ForeignKey("audio_datasets.id"), nullable=False)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=False)
     speaker_id = Column(Integer, ForeignKey("speakers.id"), nullable=False)
 
     filename = Column(String, nullable=False)  # имя .wav файла

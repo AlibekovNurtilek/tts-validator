@@ -1,310 +1,290 @@
-import librosa
-import numpy as np
-import soundfile as sf
 import os
-from typing import Tuple, List
-from scipy import ndimage
 import logging
+import shutil
+from pathlib import Path
+from typing import Dict, List, Tuple
+import numpy as np
+import librosa
+import scipy.signal
+from pydub import AudioSegment
 
-def segment_audio(audio_path: str, output_dir: str, min_length: float, max_length: float) -> dict:
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def segment_audio(
+    input_wav_path: str,
+    output_dir: str,
+    min_length: float = 1.5,
+    max_length: float = 12.0,
+) -> Dict:
     """
-    Сегментирует аудиофайл на части с учетом пауз и заданных ограничений по длине.
+    Сегментирует аудиофайл по тишине по алгоритму Qwen.
     
-    Args:
-        audio_path (str): Путь к входному WAV файлу
-        output_dir (str): Директория для сохранения сегментов
-        min_length (float): Минимальная длина сегмента в секундах
-        max_length (float): Максимальная длина сегмента в секундах
+    Аргументы:
+        input_wav_path (str): Путь к входному .wav файлу.
+        output_dir (str): Директория для сохранения сегментов.
+        min_length (float): Минимальная длина сегмента (в секундах).
+        max_length (float): Максимальная длина сегмента (в секундах).
     
-    Returns:
-        dict: Статус выполнения и статистика
-    """
-    
-    try:
-        # Создаем выходную директорию
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Загружаем аудио
-        audio, sr = librosa.load(audio_path, sr=None)
-        
-        if len(audio) == 0:
-            return {"status": "error", "message": "Пустой аудиофайл"}
-        
-        # Детектируем паузы
-        silence_map = _detect_silence(audio, sr)
-        pause_segments = _find_pause_segments(silence_map, sr)
-        
-        if len(pause_segments) == 0:
-            return {"status": "error", "message": "Не найдено пауз для сегментации"}
-        
-        # Классифицируем паузы по качеству
-        classified_pauses = _classify_pauses(pause_segments, audio, sr)
-        
-        # Выполняем сегментацию
-        segments = _perform_segmentation(audio, sr, classified_pauses, min_length, max_length)
-        
-        if len(segments) == 0:
-            return {"status": "error", "message": "Не удалось создать валидные сегменты"}
-        
-        # Сохраняем сегменты
-        saved_count = _save_segments(segments, audio, sr, output_dir, audio_path)
-        
-        # Собираем статистику
-        stats = _calculate_stats(segments, min_length, max_length, sr)
-        
-        return {
-            "status": "success",
-            "segments_count": saved_count,
-            "stats": stats
+    Возвращает:
+        Dict: Результат в формате {
+            'status': 'success' или 'error',
+            'message': сообщение,
+            'segments_count': int,
+            'stats': {
+                'min_duration': float,
+                'max_duration': float,
+                'avg_duration': float,
+                'total_segments': int
+            }
         }
-        
+    """
+    input_path = Path(input_wav_path)
+    output_path = Path(output_dir)
+
+    # Проверки
+    if not input_path.exists():
+        return {
+            'status': 'error',
+            'message': f"Файл не найден: {input_wav_path}",
+            'segments_count': 0,
+            'stats': {}
+        }
+
+    if input_path.suffix.lower() != '.wav':
+        return {
+            'status': 'error',
+            'message': "Поддерживаются только .wav файлы",
+            'segments_count': 0,
+            'stats': {}
+        }
+
+    try:
+        # Создаём директорию для сегментов
+        if output_path.exists():
+            shutil.rmtree(output_path)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Загружаем аудио
+        audio_np, sr = librosa.load(input_path, sr=None, mono=True)
+        logger.info(f"Аудио загружено: {input_wav_path}, sample rate: {sr} Hz")
+
+        # Нормализуем аудио
+        if np.max(np.abs(audio_np)) > 0:
+            audio_np = audio_np / np.max(np.abs(audio_np))
+
+        # Сегментация
+        chunks = _qwen_split_at_silence(
+            audio_np, sr, min_length=min_length, max_length=max_length
+        )
+
+        if not chunks:
+            return {
+                'status': 'error',
+                'message': 'Сегменты не были созданы.',
+                'segments_count': 0,
+                'stats': {}
+            }
+
+        # Экспорт сегментов
+        durations = []
+        for i, chunk in enumerate(chunks, 1):
+            duration_sec = len(chunk) / sr
+            durations.append(duration_sec)
+
+            # Конвертируем в int16
+            chunk_int16 = (chunk * 32767).astype(np.int16)
+
+            # Создаём AudioSegment
+            audio_segment = AudioSegment(
+                chunk_int16.tobytes(),
+                frame_rate=sr,
+                sample_width=2,
+                channels=1
+            )
+
+            # Сохраняем
+            filename = f"segment_{i:04d}.wav"
+            filepath = output_path / filename
+            audio_segment.export(str(filepath), format="wav")
+
+        # Статистика
+        stats = {
+            'min_duration': round(min(durations), 2),
+            'max_duration': round(max(durations), 2),
+            'avg_duration': round(sum(durations) / len(durations), 2),
+            'total_segments': len(durations)
+        }
+
+        logger.info(f"Сегментация завершена: {len(durations)} сегментов.")
+        return {
+            'status': 'success',
+            'message': 'Сегментация успешно выполнена.',
+            'segments_count': len(durations),
+            'stats': stats
+        }
+
     except Exception as e:
-        return {"status": "error", "message": f"Ошибка обработки: {str(e)}"}
+        logger.error(f"Ошибка при сегментации: {e}", exc_info=True)
+        return {
+            'status': 'error',
+            'message': f"Внутренняя ошибка: {str(e)}",
+            'segments_count': 0,
+            'stats': {}
+        }
 
 
-def _detect_silence(audio: np.ndarray, sr: int, 
-                   amplitude_threshold: float = 0.01,
-                   rms_threshold: float = 0.005) -> np.ndarray:
-    """Детектирует тишину используя амплитуду и RMS энергию."""
-    
-    # Детекция по амплитуде
-    amplitude_silence = np.abs(audio) < amplitude_threshold
-    
-    # Детекция по RMS энергии (окно 1024 сэмпла)
-    hop_length = 512
-    rms = librosa.feature.rms(y=audio, hop_length=hop_length, frame_length=1024)[0]
-    rms_times = librosa.frames_to_samples(np.arange(len(rms)), hop_length=hop_length)
-    
-    # Интерполируем RMS на все сэмплы
-    rms_interpolated = np.interp(np.arange(len(audio)), rms_times, rms)
-    rms_silence = rms_interpolated < rms_threshold
-    
-    # Комбинируем оба подхода
-    silence_map = amplitude_silence & rms_silence
-    
-    # Морфологическая обработка для очистки шума
-    # Erosion для удаления коротких ложных пауз
-    silence_map = ndimage.binary_erosion(silence_map, iterations=int(sr * 0.02))  # 20мс
-    # Dilation для восстановления размера реальных пауз
-    silence_map = ndimage.binary_dilation(silence_map, iterations=int(sr * 0.03))  # 30мс
-    
-    return silence_map
+# --- Внутренние функции (алгоритм Qwen) ---
+
+def _qwen_split_at_silence(
+    audio: np.ndarray,
+    sr: int,
+    min_length: float = 1.5,
+    max_length: float = 12.0
+) -> List[np.ndarray]:
+    """
+    Алгоритм разбиения по тишине, как в оригинальном скрипте.
+    """
+    target_samples = int(max_length * sr)
+    min_silence_samples = int(0.3 * sr)
+    min_chunk_samples = int(min_length * sr)
+    total_samples = len(audio)
+
+    chunks = []
+    start = 0
+
+    while start < total_samples:
+        ideal_end = min(start + target_samples, total_samples)
+
+        # Если остался хвост — добавляем как последний сегмент
+        if ideal_end >= total_samples - sr:
+            if total_samples - start > 0:
+                chunks.append(audio[start:total_samples])
+            break
+
+        # Определяем окно поиска
+        search_window_size = min(int(8 * sr), total_samples - ideal_end)
+        search_start = max(ideal_end - search_window_size // 2, start)
+        search_end = min(search_start + search_window_size, total_samples)
+        search_end = min(search_end, ideal_end + int(4 * sr))
+
+        # Ищем точку разбиения
+        split_point = _qwen_find_silence_point(
+            audio, sr, search_start, search_end, min_silence_samples, silence_threshold=0.01
+        )
+
+        # Принудительный минимум длины сегмента
+        if split_point - start < min_chunk_samples:
+            split_point = min(start + target_samples, total_samples)
+
+        if split_point > start:
+            chunks.append(audio[start:split_point])
+        start = split_point
+
+        if start >= total_samples - 1:
+            break
+
+    return chunks
 
 
-def _find_pause_segments(silence_map: np.ndarray, sr: int, 
-                        min_pause_duration: float = 0.05) -> List[Tuple[int, int]]:
-    """Находит сегменты пауз с минимальной длительностью."""
-    
-    min_samples = int(min_pause_duration * sr)
-    
-    # Находим границы пауз
-    diff = np.diff(silence_map.astype(int))
-    starts = np.where(diff == 1)[0] + 1
-    ends = np.where(diff == -1)[0] + 1
-    
-    # Обрабатываем крайние случаи
-    if silence_map[0]:
-        starts = np.concatenate(([0], starts))
-    if silence_map[-1]:
-        ends = np.concatenate((ends, [len(silence_map)]))
-    
-    # Фильтруем по минимальной длительности
-    pause_segments = []
-    for start, end in zip(starts, ends):
-        if end - start >= min_samples:
-            pause_segments.append((start, end))
-    
-    return pause_segments
+def _qwen_find_silence_point(
+    audio: np.ndarray,
+    sr: int,
+    segment_start: int,
+    segment_end: int,
+    min_silence_samples: int,
+    silence_threshold: float
+) -> int:
+    segment = audio[segment_start:segment_end]
+    segment_length = len(segment)
+
+    if segment_length <= min_silence_samples:
+        return segment_start + segment_length // 2
+
+    window_size = max(int(0.02 * sr), 100)
+    hop_size = window_size // 4
+    energies = []
+
+    for i in range(0, segment_length - window_size, hop_size):
+        window = segment[i:i + window_size]
+        energy = np.sqrt(np.mean(window ** 2))
+        center_pos = segment_start + i + window_size // 2
+        energies.append((center_pos, energy))
+
+    if not energies:
+        return segment_start + segment_length // 2
+
+    # Ищем тихие участки
+    silence_points = [(pos, energy) for pos, energy in energies if energy < silence_threshold]
+
+    if not silence_points:
+        return _qwen_find_optimal_split_point(energies, segment_start, segment_end)
+
+    # Группируем тишину
+    silence_regions = _qwen_group_silence_regions(silence_points, min_silence_samples)
+
+    if not silence_regions:
+        return _qwen_find_optimal_split_point(energies, segment_start, segment_end)
+
+    # Выбираем лучшую точку
+    return _qwen_select_best_silence_region(silence_regions, segment_start, segment_end, sr)
 
 
-def _classify_pauses(pause_segments: List[Tuple[int, int]], 
-                    audio: np.ndarray, sr: int) -> dict:
-    """Классифицирует паузы по качеству (A, B, C класс)."""
-    
-    classified = {"A": [], "B": [], "C": []}
-    
-    for start, end in pause_segments:
-        duration = (end - start) / sr
-        
-        # Анализируем качество паузы (уровень шума)
-        pause_audio = audio[start:end]
-        noise_level = np.std(pause_audio)
-        
-        # Классификация
-        if duration >= 0.5 and noise_level < 0.003:
-            classified["A"].append((start, end, duration))
-        elif duration >= 0.2 and noise_level < 0.007:
-            classified["B"].append((start, end, duration))
-        elif duration >= 0.05 and noise_level < 0.015:
-            classified["C"].append((start, end, duration))
-    
-    return classified
-
-
-def _perform_segmentation(audio: np.ndarray, sr: int, classified_pauses: dict,
-                         min_length: float, max_length: float) -> List[Tuple[int, int]]:
-    """Выполняет двухпроходную сегментацию."""
-    
-    # Создаем отсортированный список всех пауз
-    all_pauses = []
-    for quality in ["A", "B", "C"]:
-        for pause in classified_pauses[quality]:
-            all_pauses.append((pause[0], pause[1], quality))
-    
-    all_pauses.sort(key=lambda x: x[0])  # Сортируем по времени начала
-    
-    if len(all_pauses) == 0:
+def _qwen_group_silence_regions(silence_points, min_duration_samples):
+    if not silence_points:
         return []
-    
-    # Первый проход - жадная сегментация
-    segments = []
-    current_start = 0
-    min_samples = int(min_length * sr)
-    max_samples = int(max_length * sr)
-    
-    i = 0
-    while i < len(all_pauses) and current_start < len(audio):
-        best_cut = None
-        search_start = current_start + min_samples
-        search_end = min(current_start + max_samples, len(audio))
-        
-        # Ищем лучшую точку разреза в допустимом диапазоне
-        for pause_start, pause_end, quality in all_pauses[i:]:
-            pause_mid = (pause_start + pause_end) // 2
-            
-            if pause_mid < search_start:
-                continue
-            if pause_mid > search_end:
-                break
-            
-            # Приоритет по качеству пауз
-            priority = {"A": 3, "B": 2, "C": 1}[quality]
-            
-            if best_cut is None or priority > best_cut[1]:
-                best_cut = (pause_mid, priority, pause_start, pause_end)
-        
-        # Если найдена точка разреза
-        if best_cut:
-            segments.append((current_start, best_cut[0]))
-            current_start = best_cut[0]
-            
-            # Пропускаем обработанные паузы
-            while i < len(all_pauses) and all_pauses[i][1] <= best_cut[0]:
-                i += 1
+    regions = []
+    current_region = [silence_points[0]]
+    for i in range(1, len(silence_points)):
+        prev_pos, _ = silence_points[i-1]
+        curr_pos, _ = silence_points[i]
+        if curr_pos - prev_pos <= min_duration_samples // 2:
+            current_region.append(silence_points[i])
         else:
-            # Если не найдена подходящая пауза, ищем любую доступную
-            next_pause = None
-            for j in range(i, len(all_pauses)):
-                if all_pauses[j][0] > current_start:
-                    next_pause = all_pauses[j]
-                    break
-            
-            if next_pause:
-                pause_mid = (next_pause[0] + next_pause[1]) // 2
-                segments.append((current_start, pause_mid))
-                current_start = pause_mid
-                i = j + 1
-            else:
-                # Последний сегмент
-                if len(audio) - current_start >= min_samples:
-                    segments.append((current_start, len(audio)))
-                break
-    
-    # Добавляем последний сегмент если остался
-    if current_start < len(audio) and len(audio) - current_start >= min_samples:
-        segments.append((current_start, len(audio)))
-    
-    # Второй проход - оптимизация
-    segments = _optimize_segments(segments, sr, min_length, max_length)
-    
-    return segments
+            if len(current_region) >= min_duration_samples // 10:
+                regions.append(current_region)
+            current_region = [silence_points[i]]
+    if len(current_region) >= min_duration_samples // 10:
+        regions.append(current_region)
+    return regions
 
 
-def _optimize_segments(segments: List[Tuple[int, int]], sr: int,
-                      min_length: float, max_length: float) -> List[Tuple[int, int]]:
-    """Оптимизирует сегменты - объединяет короткие, разделяет длинные."""
-    
-    min_samples = int(min_length * sr)
-    max_samples = int(max_length * sr)
-    
-    optimized = []
-    i = 0
-    
-    while i < len(segments):
-        start, end = segments[i]
-        duration = end - start
-        
-        # Если сегмент слишком короткий, пытаемся объединить со следующим
-        if duration < min_samples and i + 1 < len(segments):
-            next_start, next_end = segments[i + 1]
-            combined_duration = next_end - start
-            
-            if combined_duration <= max_samples:
-                optimized.append((start, next_end))
-                i += 2  # Пропускаем следующий сегмент
-                continue
-        
-        # Если сегмент слишком длинный, пытаемся разделить пополам
-        if duration > max_samples:
-            mid_point = start + duration // 2
-            optimized.append((start, mid_point))
-            optimized.append((mid_point, end))
-        else:
-            optimized.append((start, end))
-        
-        i += 1
-    
-    # Финальная фильтрация - удаляем сегменты короче минимума
-    final_segments = []
-    for start, end in optimized:
-        if end - start >= min_samples:
-            final_segments.append((start, end))
-    
-    return final_segments
+def _qwen_select_best_silence_region(regions, segment_start, segment_end, sr):
+    segment_center = (segment_start + segment_end) // 2
+    best_score = -1
+    best_position = segment_center
+    for region in regions:
+        region_start = region[0][0]
+        region_end = region[-1][0]
+        region_duration = region_end - region_start
+        region_center = (region_start + region_end) // 2
+        centrality = 1.0 - abs(region_center - segment_center) / (segment_end - segment_start) * 2
+        duration_score = min(region_duration / sr, 1.0)
+        score = duration_score * 0.7 + centrality * 0.3
+        if score > best_score:
+            best_score = score
+            best_position = region_center
+    return best_position
 
 
-def _save_segments(segments: List[Tuple[int, int]], audio: np.ndarray, sr: int,
-                  output_dir: str, original_path: str) -> int:
-    """Сохраняет сегменты в файлы."""
-    
-    base_name = os.path.splitext(os.path.basename(original_path))[0]
-    saved_count = 0
-    
-    for i, (start, end) in enumerate(segments):
-        segment_audio = audio[start:end]
-        
-        # Проверяем качество сегмента
-        if len(segment_audio) > 0 and not np.all(segment_audio == 0):
-            filename = f"{base_name}_segment_{i+1:04d}.wav"
-            filepath = os.path.join(output_dir, filename)
-            
-            try:
-                sf.write(filepath, segment_audio, sr)
-                saved_count += 1
-            except Exception as e:
-                logging.warning(f"Не удалось сохранить сегмент {filename}: {e}")
-    
-    return saved_count
-
-
-def _calculate_stats(segments: List[Tuple[int, int]], min_length: float, 
-                    max_length: float, sr: int) -> dict:
-    """Вычисляет статистику сегментации."""
-    
-    durations = [(end - start) / sr for start, end in segments]
-    
-    in_range = sum(1 for d in durations if min_length <= d <= max_length)
-    too_short = sum(1 for d in durations if d < min_length)
-    too_long = sum(1 for d in durations if d > max_length)
-    
-    return {
-        "total_segments": len(segments),
-        "in_range": in_range,
-        "too_short": too_short,
-        "too_long": too_long,
-        "success_rate": (in_range / len(segments)) * 100 if segments else 0,
-        "avg_duration": np.mean(durations) if durations else 0,
-        "min_duration": min(durations) if durations else 0,
-        "max_duration": max(durations) if durations else 0
-    }
+def _qwen_find_optimal_split_point(energies, segment_start, segment_end):
+    if not energies:
+        return (segment_start + segment_end) // 2
+    energy_values = [e[1] for e in energies]
+    positions = [e[0] for e in energies]
+    if len(energy_values) < 3:
+        return positions[len(positions) // 2]
+    local_minima_indices = scipy.signal.argrelextrema(np.array(energy_values), np.less)[0]
+    if local_minima_indices.size > 0:
+        min_energy = float('inf')
+        best_pos = -1
+        for idx in local_minima_indices:
+            if energy_values[idx] < min_energy:
+                min_energy = energy_values[idx]
+                best_pos = positions[idx]
+        return best_pos
+    else:
+        return positions[np.argmin(energy_values)]
 

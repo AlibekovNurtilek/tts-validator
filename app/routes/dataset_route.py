@@ -5,7 +5,7 @@ from datetime import datetime
 
 from app.db import SessionLocal
 from pydantic import BaseModel
-from app.models.audio_dataset import AudioDataset
+from app.models.datasets import AudioDataset
 from app.services import dataset_service
 from app.services.dataset_service import initialize_dataset_service  # <-- наш сервис
 from app.schemas.dataset import (
@@ -47,7 +47,7 @@ def get_dataset_by_id(dataset_id: int, db: Session = Depends(get_db)):
 def get_datasets_by_speaker_id(speaker_id: int, db: Session = Depends(get_db)):
     return dataset_service.get_datasets_by_speaker_id(speaker_id, db)
 
-# ✅ Реальная инициализация
+
 @router.post("/initialize")
 def initialize_dataset(data: DatasetInitRequest, db: Session = Depends(get_db)):
     try:

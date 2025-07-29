@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from app.models.speaker import Speaker
+from app.models.speakers import Speaker
 from app.schemas.speaker import SpeakerCreate, SpeakerUpdate
 
 def get_all_speakers(db: Session):

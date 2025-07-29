@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-from app.models.audio_dataset import AudioDataset
-from app.models.speaker import Speaker
+from app.models.datasets import AudioDataset
+from app.models.speakers import Speaker
 from app.schemas.dataset import DatasetCreate, DatasetUpdate, DatasetInitRequest
 from app.services.speaker_service import get_or_create_speaker_by_name
 import uuid
@@ -13,6 +13,7 @@ from pydub.utils import mediainfo
 import wave
 from slugify import slugify 
 from app.services.segmentation_service import segment_audio
+from app.services.segmentation_service2 import segment_audio_2
 from app.config import BASE_DATA_DIR
 
 
@@ -86,7 +87,7 @@ def initialize_dataset_service(data: DatasetInitRequest, db: Session):
 
     # 5. Семплируем
     print("[stub] Запуск семплирования аудио...")
-    result = segment_audio(str(source_abs_path), str(segments_abs_dir), data.min_length, data.max_length)
+    result = segment_audio_2(str(source_abs_path), str(segments_abs_dir), data.min_length, data.max_length)
 
     if result['status'] != 'success':
         raise RuntimeError(f"Сегментация не удалась: {result['message']}")

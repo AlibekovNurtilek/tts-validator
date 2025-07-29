@@ -4,7 +4,7 @@ from datetime import datetime
 from app.db import Base
 
 class AudioDataset(Base):
-    __tablename__ = "audio_datasets"
+    __tablename__ = "datasets"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)

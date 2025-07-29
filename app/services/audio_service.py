@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from app.models.audio_dataset import AudioDataset
+from app.models.datasets import AudioDataset
 from app.config import BASE_DATA_DIR
 from fastapi.responses import FileResponse
 
@@ -36,7 +36,7 @@ def get_audio_filenames_by_dataset_id(
     segments_dir = os.path.join(BASE_DATA_DIR, dataset.segments_rel_dir)
 
     if not os.path.isdir(segments_dir):
-        raise HTTPException(status_code=404, detail="Segments directory not found")
+        raise HTTPException(status_code=404, detail=f"Segments directory not found")
 
     # Получаем все .wav файлы и сортируем по имени
     all_files = sorted([
