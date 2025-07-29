@@ -9,3 +9,6 @@ numpy
 sqlalchemy
 passlib[bcrypt]
 python-jose[cryptography]
+celery[redis]
+redis
+
