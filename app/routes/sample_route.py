@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.orm import Session
 from typing import List
 from app.db import SessionLocal
 from app.schemas.sample import (
-    SampleCreate, SampleUpdate, SampleOut
+    SampleCreate, SampleUpdate, SampleOut, DatasetSamplesResponse
 )
 from app.services import sample_service
 
@@ -33,10 +33,14 @@ def get_samples_by_speaker_id(speaker_id: int, db: Session = Depends(get_db)):
     return sample_service.get_samples_by_speaker_id(speaker_id, db)
 
 
-@router.get("/by-dataset/{dataset_id}", response_model=List[SampleOut])
-def get_samples_by_dataset_id(dataset_id: int, db: Session = Depends(get_db)):
-    return sample_service.get_samples_by_dataset_id(dataset_id, db)
-
+@router.get("/by-dataset/{dataset_id}", response_model=DatasetSamplesResponse)
+def get_samples_by_dataset_id(
+    dataset_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1),
+    db: Session = Depends(get_db)
+):
+    return sample_service.get_samples_by_dataset_id(dataset_id, db, page, limit)
 
 @router.post("/", response_model=SampleOut, status_code=status.HTTP_201_CREATED)
 def create_sample(sample: SampleCreate, db: Session = Depends(get_db)):

@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI
-from app.routes import auth, audio, dataset_route, speaker_route, sample_route
+from app.routes import audio_route, auth_route, dataset_route, speaker_route, sample_route
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import Base, engine
@@ -10,7 +10,7 @@ from app.models import datasets, samples, speakers
 # создаёт таблицы, если их нет
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="TTS Audio Validator")
+app = FastAPI(title="TTS Audio Validator2 ")
 
 # 🔓 Настройка CORS — разрешить всё
 app.add_middleware(
@@ -24,8 +24,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(audio.router)
+app.include_router(auth_route.router)
+app.include_router(audio_route.router)
 app.include_router(dataset_route.router)
 app.include_router(speaker_route.router)
 app.include_router(sample_route.router)

@@ -8,7 +8,8 @@ class DatasetBase(BaseModel):
     source_rel_path: str
     segments_rel_dir: str
     count_of_samples: int
-    duration: float
+    duration: float | None = None
+    status: str
 
 class DatasetCreate(DatasetBase):
     pass

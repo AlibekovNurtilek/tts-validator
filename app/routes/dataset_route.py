@@ -13,7 +13,8 @@ from app.schemas.dataset import (
     DatasetOut,
     DatasetInitRequest
 )
-from app.tasks.initialize import initialize_dataset_task
+from app.tasks.initialize_dataset import initialize_dataset_task
+from app.services.initialize_service import create_dataset_entry
 
 
 
@@ -48,11 +49,6 @@ def get_datasets_by_speaker_id(speaker_id: int, db: Session = Depends(get_db)):
     return dataset_service.get_datasets_by_speaker_id(speaker_id, db)
 
 
-def initialize_dataset(data: DatasetInitRequest):
-    task = initialize_dataset_task.delay(data.dict())
-    return {"message": "Задача добавлена", "task_id": task.id}
-
-
 @router.post("/", response_model=DatasetOut, status_code=status.HTTP_201_CREATED)
 def create_dataset(dataset: DatasetCreate, db: Session = Depends(get_db)):
     return dataset_service.create_dataset(dataset, db)
@@ -67,8 +63,19 @@ def update_dataset(dataset_id: int, dataset: DatasetUpdate, db: Session = Depend
 def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
     dataset_service.delete_dataset(dataset_id, db)
     return
-
 @router.post("/initialize")
-def initialize_dataset(data: DatasetInitRequest):
-    task = initialize_dataset_task.delay(data.dict())
-    return {"message": "Задача добавлена", "task_id": task.id}
+def initialize_dataset(data: DatasetInitRequest, db: Session = Depends(get_db)):
+    if not data.speaker_name:
+        raise HTTPException(status_code=400, detail="speaker_name обязателен")
+
+    # Шаг 1: создаём запись в БД со статусом INITIALIZING
+    dataset_id = create_dataset_entry(db, data.speaker_name, data.url)
+
+    # Шаг 2: запускаем фоновую задачу
+    task = initialize_dataset_task.delay(dataset_id, data.dict())
+
+    return {
+        "message": "Задача инициализации добавлена",
+        "task_id": task.id,
+        "dataset_id": dataset_id
+    }

@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db import Base
+from sqlalchemy import Enum as SqlEnum
+from app.models.data_status import DatasetStatus
 
 class AudioDataset(Base):
     __tablename__ = "datasets"
@@ -19,5 +21,7 @@ class AudioDataset(Base):
     duration = Column(Float, nullable=True)  # в секундах
     created_at = Column(DateTime, default=datetime.utcnow)
     last_update = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    status = Column(SqlEnum(DatasetStatus), default=DatasetStatus.INITIALIZING, nullable=False)
 
     speaker = relationship("Speaker", backref="datasets")

@@ -19,8 +19,24 @@ def get_samples_by_speaker_id(speaker_id: int, db: Session):
     return db.query(SampleText).filter(SampleText.speaker_id == speaker_id).all()
 
 
-def get_samples_by_dataset_id(dataset_id: int, db: Session):
-    return db.query(SampleText).filter(SampleText.dataset_id == dataset_id).all()
+def get_samples_by_dataset_id(dataset_id: int, db: Session, page: int, limit: int):
+    offset = (page - 1) * limit
+
+    samples = (
+        db.query(SampleText)
+        .filter(SampleText.dataset_id == dataset_id)
+        .order_by(SampleText.created_at.asc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "dataset_id": dataset_id,
+        "page": page,
+        "limit": limit,
+        "samples": samples
+    }
 
 
 def create_sample(sample: SampleCreate, db: Session):

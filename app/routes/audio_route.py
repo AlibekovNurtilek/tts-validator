@@ -33,27 +33,6 @@ def get_current_user(request: Request):
     
     return payload
 
-@router.get("/get")
-def get_audio_file(
-    audio_path: str = Query(..., description="Relative audio path, e.g. uzak_jol_wavs/uzak_jol_10_b_005.wav"),
-    user=Depends(get_current_user)  # 👈 добавляем авторизацию
-):
-    # Строим путь относительно datasets.json (выше на 3 папки от этого файла)
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-    abs_file_path = os.path.abspath(os.path.join(base_dir, audio_path))
-
-    # Проверяем, что путь не вышел за пределы base_dir (защита от ../../ атак)
-    if not abs_file_path.startswith(base_dir):
-        raise HTTPException(status_code=403, detail="Invalid file path")
-
-    # Проверяем, что файл существует
-    if not os.path.isfile(abs_file_path):
-        raise HTTPException(status_code=404, detail=f"Audio file: {abs_file_path} not found")
-
-    # Отдаём файл
-    return FileResponse(abs_file_path, media_type="audio/wav")
-
-
 @router.get("/list")
 def list_audio_segments(
     dataset_id: int = Query(..., description="ID датасета"),

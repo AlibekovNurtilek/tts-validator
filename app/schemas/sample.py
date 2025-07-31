@@ -1,13 +1,13 @@
 from pydantic import BaseModel
 from datetime import datetime
+from typing import List
+
 
 class SampleBase(BaseModel):
     dataset_id: int
     speaker_id: int
     filename: str
-    text: str
-    start_time: float | None = None
-    end_time: float | None = None
+    text: str | None = None
     duration: float | None = None
 
 class SampleCreate(SampleBase):
@@ -22,3 +22,9 @@ class SampleOut(SampleBase):
 
     class Config:
         orm_mode = True
+
+class DatasetSamplesResponse(BaseModel):
+    dataset_id: int
+    page: int
+    limit: int
+    samples: List[SampleOut]

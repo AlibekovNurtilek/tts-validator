@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey, DateTim
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db import Base
+from sqlalchemy import Enum as SqlEnum
+from app.models.data_status import SampleStatus
 
 class SampleText(Base):
     __tablename__ = "samples"
@@ -10,15 +12,14 @@ class SampleText(Base):
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=False)
     speaker_id = Column(Integer, ForeignKey("speakers.id"), nullable=False)
 
-    filename = Column(String, nullable=False)  # имя .wav файла
-    text = Column(Text, nullable=False)        # транскрипция
+    filename = Column(String, nullable=True)  # имя .wav файла
+    text = Column(Text, nullable=True)        # транскрипция
 
-    start_time = Column(Float, nullable=True)  # начало в секундах
-    end_time = Column(Float, nullable=True)    # конец в секундах
     duration = Column(Float, nullable=True)    # длина сегмента
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    status = Column(SqlEnum(SampleStatus), default=SampleStatus.NEW, nullable=False)
     # relationships
     dataset = relationship("AudioDataset", backref="samples")
     speaker = relationship("Speaker", backref="samples")
