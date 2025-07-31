@@ -13,7 +13,7 @@ from app.schemas.dataset import (
     DatasetOut,
     DatasetInitRequest
 )
-from app.tasks.initialize_dataset import initialize_dataset_task
+from app.tasks.initialize_dataset_tasks import initialize_dataset_task
 from app.services.initialize_service import create_dataset_entry
 
 

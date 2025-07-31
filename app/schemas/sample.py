@@ -9,6 +9,7 @@ class SampleBase(BaseModel):
     filename: str
     text: str | None = None
     duration: float | None = None
+    status: str | None = None
 
 class SampleCreate(SampleBase):
     pass
@@ -28,3 +29,4 @@ class DatasetSamplesResponse(BaseModel):
     page: int
     limit: int
     samples: List[SampleOut]
+    total: int

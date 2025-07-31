@@ -22,6 +22,8 @@ def get_samples_by_speaker_id(speaker_id: int, db: Session):
 def get_samples_by_dataset_id(dataset_id: int, db: Session, page: int, limit: int):
     offset = (page - 1) * limit
 
+    total = db.query(SampleText).filter(SampleText.dataset_id == dataset_id).count()
+
     samples = (
         db.query(SampleText)
         .filter(SampleText.dataset_id == dataset_id)
@@ -35,6 +37,7 @@ def get_samples_by_dataset_id(dataset_id: int, db: Session, page: int, limit: in
         "dataset_id": dataset_id,
         "page": page,
         "limit": limit,
+        "total": total,
         "samples": samples
     }
 

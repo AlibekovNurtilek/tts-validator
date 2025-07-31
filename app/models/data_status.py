@@ -5,7 +5,8 @@ class DatasetStatus(str, Enum):
     SAMPLING = "SAMPLING"               # Идёт сегментация аудио
     SAMPLED = "SAMPLED"                 # Аудио успешно разбито на фрагменты
     TRANSCRIBING = "TRANSCRIBING"       # Идёт автоматическая транскрипция всех сэмплов
-    TRANSCRIBED = "TRANSCRIBED"         # Транскрипция завершена
+    FAILED_TRANSCRIPTION = "FAILED_TRANSCRIPTION"         # Ошибка при транскрипции
+    SEMY_TRANSCRIBED = "SEMY_TRANSCRIBED"              # Получен текст из ASR(ЧАСТИЧНО)
     REVIEW = "REVIEW"                   # Ожидает ручную проверку (semi-ready)
     READY = "READY"                     # Все сэмплы проверены и одобрены
     ERROR = "ERROR"                     # Ошибка на любом этапе
