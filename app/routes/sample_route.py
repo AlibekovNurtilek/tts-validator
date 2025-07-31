@@ -6,6 +6,7 @@ from app.schemas.sample import (
     SampleCreate, SampleUpdate, SampleOut, DatasetSamplesResponse
 )
 from app.services import sample_service
+from app.models.data_status import SampleStatus
 
 router = APIRouter(prefix="/samples", tags=["samples"])
 
@@ -38,9 +39,18 @@ def get_samples_by_dataset_id(
     dataset_id: int,
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1),
+    status: SampleStatus | None = Query(None, description="Фильтрация по статусу"),
+    search: str | None = Query(None, description="Поиск по filename или text"),
     db: Session = Depends(get_db)
 ):
-    return sample_service.get_samples_by_dataset_id(dataset_id, db, page, limit)
+    return sample_service.get_samples_by_dataset_id(
+        dataset_id=dataset_id,
+        db=db,
+        page=page,
+        limit=limit,
+        status=status,
+        search=search
+    )
 
 @router.post("/", response_model=SampleOut, status_code=status.HTTP_201_CREATED)
 def create_sample(sample: SampleCreate, db: Session = Depends(get_db)):
@@ -56,3 +66,11 @@ def update_sample(sample_id: int, sample: SampleUpdate, db: Session = Depends(ge
 def delete_sample(sample_id: int, db: Session = Depends(get_db)):
     sample_service.delete_sample(sample_id, db)
     return
+
+@router.post("/{sample_id}/approve", response_model=SampleOut)
+def approve_sample_route(sample_id: int, db: Session = Depends(get_db)):
+    return sample_service.approve_sample(sample_id, db)
+
+@router.post("/{sample_id}/reject", response_model=SampleOut)
+def reject_sample_route(sample_id: int, db: Session = Depends(get_db)):
+    return sample_service.reject_sample(sample_id, db)

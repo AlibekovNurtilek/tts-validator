@@ -12,10 +12,10 @@ class SampleBase(BaseModel):
     status: str | None = None
 
 class SampleCreate(SampleBase):
-    pass
+    text: str | None = None
 
-class SampleUpdate(SampleBase):
-    pass
+class SampleUpdate(BaseModel):
+    text: str
 
 class SampleOut(SampleBase):
     id: int

@@ -5,10 +5,44 @@ from app.models.speakers import Speaker
 from app.schemas.dataset import DatasetCreate, DatasetUpdate, DatasetInitRequest
 from app.config import BASE_DATA_DIR
 
+from sqlalchemy import or_, and_
+from app.models.data_status import  DatasetStatus
+from typing import Optional
+from datetime import datetime
+
+def get_all_datasets(
+    db: Session,
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
+    speaker_id: Optional[int] = None,
+    name_search: Optional[str] = None,
+    created_from: Optional[datetime] = None,
+    created_to: Optional[datetime] = None,
+):
+    query = db.query(AudioDataset)
+
+    if status:
+        query = query.filter(AudioDataset.status == status)
+
+    if speaker_id:
+        query = query.filter(AudioDataset.speaker_id == speaker_id)
+
+    if name_search:
+        query = query.filter(AudioDataset.name.ilike(f"%{name_search}%"))
+
+    if created_from:
+        query = query.filter(AudioDataset.created_at >= created_from)
+
+    if created_to:
+        query = query.filter(AudioDataset.created_at <= created_to)
+
+    total = query.count()
+    items = query.order_by(AudioDataset.created_at.desc()).offset(offset).limit(limit).all()
+
+    return {"items": items, "total": total}
 
 
-def get_all_datasets(db: Session):
-    return db.query(AudioDataset).all()
 
 
 def get_dataset_by_id(dataset_id: int, db: Session):
@@ -49,3 +83,13 @@ def delete_dataset(dataset_id: int, db: Session):
     db.commit()
 
 
+
+def update_dataset_image(dataset_id: int, dataset_img: str, db: Session):
+    db_dataset = db.query(AudioDataset).filter(AudioDataset.id == dataset_id).first()
+    if not db_dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    db_dataset.dataset_img = dataset_img
+    db.commit()
+    db.refresh(db_dataset)
+    return db_dataset

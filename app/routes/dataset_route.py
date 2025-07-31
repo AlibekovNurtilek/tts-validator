@@ -1,17 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Annotated, Optional
 from datetime import datetime
-
+from fastapi import Query
+from datetime import datetime
 from app.db import SessionLocal
 from pydantic import BaseModel
 from app.models.datasets import AudioDataset
 from app.services import dataset_service
+from app.schemas.dataset import DatasetListResponse
 from app.schemas.dataset import (
     DatasetCreate,
     DatasetUpdate,
     DatasetOut,
-    DatasetInitRequest
+    DatasetInitRequest,
+    DatasetImageUpdate
 )
 from app.tasks.initialize_dataset_tasks import initialize_dataset_task
 from app.services.initialize_service import create_dataset_entry
@@ -34,10 +37,30 @@ def get_db():
 # 📍 Роуты
 # ---------------------
 
-@router.get("/", response_model=List[DatasetOut])
-def get_all_datasets(db: Session = Depends(get_db)):
-    return dataset_service.get_all_datasets(db)
 
+
+
+@router.get("/", response_model=DatasetListResponse)
+def get_all_datasets(
+    limit: int = Query(10, ge=1),
+    offset: int = Query(0, ge=0),
+    status: Optional[str] = None,
+    speaker_id: Optional[int] = None,
+    name_search: Optional[str] = None,
+    created_from: Optional[datetime] = None,
+    created_to: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+):
+    return dataset_service.get_all_datasets(
+        db=db,
+        limit=limit,
+        offset=offset,
+        status=status,
+        speaker_id=speaker_id,
+        name_search=name_search,
+        created_from=created_from,
+        created_to=created_to,
+    )
 
 @router.get("/{dataset_id}", response_model=DatasetOut)
 def get_dataset_by_id(dataset_id: int, db: Session = Depends(get_db)):
@@ -79,3 +102,7 @@ def initialize_dataset(data: DatasetInitRequest, db: Session = Depends(get_db)):
         "task_id": task.id,
         "dataset_id": dataset_id
     }
+
+@router.patch("/{dataset_id}/image", response_model=DatasetOut)
+def update_dataset_image(dataset_id: int, data: DatasetImageUpdate, db: Session = Depends(get_db)):
+    return dataset_service.update_dataset_image(dataset_id, data.dataset_img, db)

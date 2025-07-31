@@ -21,7 +21,9 @@ class AudioDataset(Base):
     duration = Column(Float, nullable=True)  # в секундах
     created_at = Column(DateTime, default=datetime.utcnow)
     last_update = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    dataset_img = Column(String, nullable=True)
     
     status = Column(SqlEnum(DatasetStatus), default=DatasetStatus.INITIALIZING, nullable=False)
 
     speaker = relationship("Speaker", backref="datasets")
+

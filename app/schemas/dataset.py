@@ -10,6 +10,7 @@ class DatasetBase(BaseModel):
     count_of_samples: int
     duration: float | None = None
     status: str
+    dataset_img :str | None = None
 
 class DatasetCreate(DatasetBase):
     pass
@@ -31,3 +32,12 @@ class DatasetInitRequest(BaseModel):
     max_length: int | None = None
     speaker_id: int | None = None
     speaker_name: str | None = None
+
+from typing import List
+
+class DatasetListResponse(BaseModel):
+    items: List[DatasetOut]
+    total: int
+
+class DatasetImageUpdate(BaseModel):
+    dataset_img: str

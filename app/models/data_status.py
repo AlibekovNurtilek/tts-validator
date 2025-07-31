@@ -19,3 +19,5 @@ class SampleStatus(str, Enum):
     FAILED_TRANSCRIPTION = "FAILED_TRANSCRIPTION"  # Ошибка при транскрипции
     REJECTED = "REJECTED"                    # Отклонён вручную
     APPROVED = "APPROVED"                    # Одобрен после ручной правки
+    # Виртуальный статус (не хранится в БД)
+    UNREVIEWED = "UNREVIEWED"
