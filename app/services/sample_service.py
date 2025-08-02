@@ -28,40 +28,53 @@ def get_samples_by_dataset_id(
     page: int,
     limit: int,
     status: SampleStatus | None = None,
-    search: str | None = None
+    search: str | None = None,
+    from_index: int | None = None,
+    to_index: int | None = None
 ):
-    offset = (page - 1) * limit
+    base_query = db.query(SampleText).filter(SampleText.dataset_id == dataset_id)
 
-    query = db.query(SampleText).filter(SampleText.dataset_id == dataset_id)
+    # Сортировка по filename (глобальная)
+    base_query = base_query.order_by(SampleText.filename.asc())
 
-    # Фильтрация по статусу
+    # Получаем все id в нужном интервале (это критично!)
+    if from_index is not None and to_index is not None:
+        limited_ids = (
+            base_query
+            .with_entities(SampleText.id)
+            .offset(from_index)
+            .limit(to_index - from_index)
+            .all()
+        )
+        limited_ids = [row.id for row in limited_ids]
+        # Ограничим выборку этими id
+        filtered_query = db.query(SampleText).filter(SampleText.id.in_(limited_ids))
+    else:
+        filtered_query = base_query
+
+    # Применяем фильтрацию по статусу
     if status:
         if status == SampleStatus.UNREVIEWED:
-            query = query.filter(
+            filtered_query = filtered_query.filter(
                 SampleText.status.notin_([SampleStatus.APPROVED, SampleStatus.REJECTED])
             )
         else:
-            query = query.filter(SampleText.status == status)
+            filtered_query = filtered_query.filter(SampleText.status == status)
 
-    # Поиск по filename или text, с игнором регистра
+    # Применяем поиск
     if search:
-        pattern = f"%{search.strip()}%"  # НЕ .lower()
-        query = query.filter(
+        pattern = f"%{search.strip()}%"
+        filtered_query = filtered_query.filter(
             or_(
                 SampleText.filename.ilike(pattern),
                 SampleText.text.ilike(pattern)
             )
         )
 
-    total = query.count()
+    total = filtered_query.count()
 
-    samples = (
-        query
-        .order_by(SampleText.created_at.asc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
+    offset = (page - 1) * limit
+    samples = filtered_query.order_by(SampleText.filename.asc()).offset(offset).limit(limit).all()
 
     return {
         "dataset_id": dataset_id,

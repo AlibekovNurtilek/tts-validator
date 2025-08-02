@@ -93,3 +93,9 @@ def update_dataset_image(dataset_id: int, dataset_img: str, db: Session):
     db.commit()
     db.refresh(db_dataset)
     return db_dataset
+
+def get_dataset_status_by_id(dataset_id: int, db: Session) -> str:
+    dataset = db.query(AudioDataset).filter(AudioDataset.id == dataset_id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return dataset.status.value  # Если статус — Enum, возвращаем его строковое значение

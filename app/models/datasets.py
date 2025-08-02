@@ -27,3 +27,11 @@ class AudioDataset(Base):
 
     speaker = relationship("Speaker", backref="datasets")
 
+    # relationships
+    samples = relationship(
+        "SampleText",
+        back_populates="dataset",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+

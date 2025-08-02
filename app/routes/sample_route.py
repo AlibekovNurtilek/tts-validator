@@ -41,6 +41,8 @@ def get_samples_by_dataset_id(
     limit: int = Query(10, ge=1),
     status: SampleStatus | None = Query(None, description="Фильтрация по статусу"),
     search: str | None = Query(None, description="Поиск по filename или text"),
+    from_index: int | None = Query(None, ge=0, description="Начальный индекс в отсортированном списке по filename"),
+    to_index: int | None = Query(None, ge=0, description="Конечный индекс в отсортированном списке по filename"),
     db: Session = Depends(get_db)
 ):
     return sample_service.get_samples_by_dataset_id(
@@ -49,8 +51,11 @@ def get_samples_by_dataset_id(
         page=page,
         limit=limit,
         status=status,
-        search=search
+        search=search,
+        from_index=from_index,
+        to_index=to_index
     )
+
 
 @router.post("/", response_model=SampleOut, status_code=status.HTTP_201_CREATED)
 def create_sample(sample: SampleCreate, db: Session = Depends(get_db)):

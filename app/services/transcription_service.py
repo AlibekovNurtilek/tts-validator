@@ -15,6 +15,8 @@ from app.models.samples import SampleText
 from app.models.data_status import SampleStatus, DatasetStatus
 from app.config import BASE_DATA_DIR
 from app.config import GEMINI_API_KEY
+from app.tasks.notify_tasks import notify_progress_task
+
 
 
 
@@ -51,7 +53,11 @@ def transcribe_with_whisper(dataset: AudioDataset, db: Session):
     dataset.status = DatasetStatus.TRANSCRIBING
     db.commit()
 
-    samples = db.query(SampleText).filter(SampleText.dataset_id == dataset.id).all()
+    samples = db.query(SampleText).filter(
+        SampleText.dataset_id == dataset.id,
+        SampleText.status.in_([SampleStatus.NEW, SampleStatus.FAILED_TRANSCRIPTION])
+    ).all()
+
 
     if not samples:
         logger.error(f"Нет сэмплов в базе для датасета ID={dataset.id}")
@@ -62,7 +68,7 @@ def transcribe_with_whisper(dataset: AudioDataset, db: Session):
     success_count = 0
     fail_count = 0
 
-    for sample in samples:
+    for i, sample in enumerate(samples, 1):
         file_path = os.path.join(segments_dir, sample.filename)
 
         if not os.path.exists(file_path):
@@ -99,6 +105,13 @@ def transcribe_with_whisper(dataset: AudioDataset, db: Session):
             db.commit()
             fail_count += 1
 
+        progress = int(i / len(samples) * 100)
+        notify_progress_task.delay(
+            dataset_id=dataset.id,
+            task="Транскрипция (Whisper)",
+            progress=progress
+        )
+
     # Обновление статуса датасета
     if success_count == 0:
         dataset.status = DatasetStatus.FAILED_TRANSCRIPTION
@@ -108,7 +121,6 @@ def transcribe_with_whisper(dataset: AudioDataset, db: Session):
         dataset.status = DatasetStatus.REVIEW  # Всё успешно
 
     db.commit()
-
     return {
         "message": "Транскрипция завершена",
         "success": success_count,
@@ -213,7 +225,11 @@ def transcribe_with_gemini(dataset: AudioDataset, db: Session):
     dataset.status = DatasetStatus.TRANSCRIBING
     db.commit()
 
-    samples = db.query(SampleText).filter(SampleText.dataset_id == dataset.id).all()
+    samples = db.query(SampleText).filter(
+        SampleText.dataset_id == dataset.id,
+        SampleText.status.in_([SampleStatus.NEW, SampleStatus.FAILED_TRANSCRIPTION])
+    ).all()
+    
     if not samples:
         dataset.status = DatasetStatus.FAILED_TRANSCRIPTION
         db.commit()
@@ -223,7 +239,7 @@ def transcribe_with_gemini(dataset: AudioDataset, db: Session):
     failed_count = 0
     base_dir = os.path.join(BASE_DATA_DIR, dataset.segments_rel_dir)
 
-    for sample in samples:
+    for i, sample in enumerate(samples, 1):
         path = os.path.join(base_dir, sample.filename)
         if not os.path.exists(path):
             sample.status = SampleStatus.FAILED_TRANSCRIPTION
@@ -249,11 +265,19 @@ def transcribe_with_gemini(dataset: AudioDataset, db: Session):
             failed_count += 1
 
         db.commit()
+        
+        progress = int(i / len(samples) * 100)
+        notify_progress_task.delay(
+            dataset_id=dataset.id,
+            task="Транскрипция (Gemini)",
+            progress=progress
+        )
+
 
     if success_count == 0:
         dataset.status = DatasetStatus.FAILED_TRANSCRIPTION
-    elif failed_count == 0:
-        dataset.status = DatasetStatus.TRANSCRIBED
+    elif failed_count > 0:
+        dataset.status = DatasetStatus.SEMY_TRANSCRIBED
     else:
         dataset.status = DatasetStatus.REVIEW
 

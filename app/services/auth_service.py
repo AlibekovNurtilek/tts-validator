@@ -46,7 +46,3 @@ def login_user(credentials: schemas.UserLogin, db: Session) -> JSONResponse:
     return response
 
 
-def logout_user() -> JSONResponse:
-    response = JSONResponse({"message": "Logged out"})
-    response.delete_cookie("access_token")
-    return response

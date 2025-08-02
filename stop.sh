@@ -14,11 +14,18 @@ for port in "${ports[@]}"; do
     fi
 done
 
-# Остановка Celery воркеров
-celery_pids=$(pgrep -f "celery -A app.celery_worker worker")
-if [ -n "$celery_pids" ]; then
-    echo "🔴 Killing Celery workers (PIDs: $celery_pids)..."
-    kill -9 $celery_pids
+# Остановка Celery воркера по PID-файлу
+CELERY_PID_FILE="logs/celery.pid"
+
+if [ -f "$CELERY_PID_FILE" ]; then
+    pid=$(cat "$CELERY_PID_FILE")
+    if ps -p $pid > /dev/null; then
+        echo "🔴 Killing Celery worker (PID: $pid)..."
+        kill -9 $pid
+    else
+        echo "🟢 Celery PID $pid not running."
+    fi
+    rm -f "$CELERY_PID_FILE"
 else
-    echo "🟢 No Celery workers running."
+    echo "🟢 No Celery PID file found."
 fi

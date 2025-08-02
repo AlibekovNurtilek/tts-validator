@@ -16,11 +16,13 @@ from app.models.samples import SampleText, SampleStatus
 from app.schemas.dataset import DatasetInitRequest
 from app.services.segmentation_service import segment_audio
 from app.services.speaker_service import get_or_create_speaker_by_name
+from app.notifications import notify_progress
 
 logger = logging.getLogger(__name__)
 
 
 def create_dataset_entry(db: Session, speaker_name: str, url: str) -> int:
+    
     speaker = get_or_create_speaker_by_name(db, speaker_name)
     speaker_id = speaker.id
     speaker_slug = slugify(speaker_name)
@@ -47,11 +49,14 @@ def create_dataset_entry(db: Session, speaker_name: str, url: str) -> int:
         last_update=datetime.utcnow()
     )
 
+    notify_progress(new_dataset.id, task="Создание записи в БД", progress=5)
+
     db.add(new_dataset)
     db.commit()
     db.refresh(new_dataset)
 
     logger.info(f"Создан новый датасет ID={new_dataset.id}, name={base_name}")
+
     return new_dataset.id
 
 
@@ -64,23 +69,28 @@ def initialize_dataset_service(dataset_id: int, data: DatasetInitRequest, db: Se
     source_abs_path = Path(BASE_DATA_DIR) / dataset.source_rel_path
     segments_abs_dir = os.path.join(BASE_DATA_DIR, dataset.segments_rel_dir)
     os.makedirs(segments_abs_dir, exist_ok=True)
+    
+    
+
 
     try:
         logger.info(f"Скачиваем аудио: {data.url}")
-        download_audio_from_youtube(data.url, str(source_abs_path.with_suffix('')))
+        download_audio_from_youtube(data.url, str(source_abs_path.with_suffix('')), dataset_id=dataset.id)
+        notify_progress(dataset_id, task="Скачивание завершилось", progress=100)
+        logger.info("Изменяем статус: SAMPLING")
+        dataset.status = DatasetStatus.SAMPLING
+        db.commit()
     except Exception as e:
         logger.exception("Ошибка при скачивании аудио")
         dataset.status = DatasetStatus.ERROR
         db.commit()
         raise RuntimeError(f"Ошибка при скачивании аудио: {e}")
-
+    
     try:
-        logger.info("Изменяем статус: SAMPLING")
-        dataset.status = DatasetStatus.SAMPLING
-        db.commit()
+        
 
         logger.info("Сегментируем аудио")
-        result = segment_audio(str(source_abs_path), str(segments_abs_dir), data.min_length, data.max_length)
+        result = segment_audio(str(source_abs_path), str(segments_abs_dir), data.min_length, data.max_length, dataset_id=dataset.id)
 
         if result['status'] != 'success':
             raise RuntimeError(result['message'])
@@ -107,8 +117,16 @@ def initialize_dataset_service(dataset_id: int, data: DatasetInitRequest, db: Se
         raise
 
 
-def download_audio_from_youtube(url: str, output_path: str) -> str:
+def download_audio_from_youtube(url: str, output_path: str, dataset_id: int) -> str:
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    def hook(d):
+        if d['status'] == 'downloading':
+            total = d.get('total_bytes') or d.get('total_bytes_estimate')
+            downloaded = d.get('downloaded_bytes')
+            if total and downloaded:
+                percent = int(downloaded / total * 94) + 5
+                notify_progress(dataset_id, task="Скачивание", progress=percent)
 
     ydl_opts = {
         'format': 'bestaudio/best',
@@ -118,7 +136,8 @@ def download_audio_from_youtube(url: str, output_path: str) -> str:
             'preferredcodec': 'wav',
             'preferredquality': '192',
         }],
-        'quiet': True
+        'quiet': True,
+        'progress_hooks': [hook]
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:

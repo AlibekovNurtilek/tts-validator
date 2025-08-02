@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Название лог-файлов
+# Название лог-файлов и PID-файлов
 LOG_DIR="logs"
 SERVER_LOG="$LOG_DIR/server.log"
 CELERY_LOG="$LOG_DIR/celery.log"
+CELERY_PID_FILE="$LOG_DIR/celery.pid"
 
 # Создаём папку для логов, если не существует
 mkdir -p "$LOG_DIR"
@@ -17,8 +18,10 @@ nohup uvicorn app.main:app \
 
 echo "✅ Server started on port 8081 (logs: $SERVER_LOG)"
 
-# Запускаем Celery воркер (отдельный лог)
+# Запускаем Celery воркер и сохраняем его PID
 nohup celery -A app.celery_worker worker \
-  --loglevel=info > "$CELERY_LOG" 2>&1 &
+  --loglevel=info \
+  --concurrency=16 > "$CELERY_LOG" 2>&1 &
 
-echo "✅ Celery worker started (logs: $CELERY_LOG)"
+echo $! > "$CELERY_PID_FILE"
+echo "✅ Celery worker started (logs: $CELERY_LOG, pid: $(cat $CELERY_PID_FILE))"
